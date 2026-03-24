@@ -12,6 +12,7 @@ import WikipediaSelector from '~/components/WikipediaSelector'
 import LoadingSpinner from '~/components/LoadingSpinner'
 import Alert from '~/components/Alert'
 import { IconCheck, IconChevronDown, IconChevronUp, IconCpu, IconBooks } from '@tabler/icons-react'
+import Input from '~/components/inputs/Input'
 import StorageProjectionBar from '~/components/StorageProjectionBar'
 import { useNotifications } from '~/context/NotificationContext'
 import useInternetStatus from '~/hooks/useInternetStatus'
@@ -122,6 +123,9 @@ export default function EasySetupWizard(props: { system: { services: ServiceSlim
   const [selectedAiModels, setSelectedAiModels] = useState<string[]>([])
   const [isProcessing, setIsProcessing] = useState(false)
   const [showAdditionalTools, setShowAdditionalTools] = useState(false)
+  const [ollamaMode, setOllamaMode] = useState<'local' | 'external'>('local')
+  const [externalOllamaUrl, setExternalOllamaUrl] = useState('')
+  const [externalUrlError, setExternalUrlError] = useState('')
 
   // Category/tier selection state
   const [selectedTiers, setSelectedTiers] = useState<Map<string, SpecTier>>(new Map())
@@ -141,7 +145,8 @@ export default function EasySetupWizard(props: { system: { services: ServiceSlim
     selectedMapCollections.length > 0 ||
     selectedTiers.size > 0 ||
     selectedAiModels.length > 0 ||
-    (selectedWikipedia !== null && selectedWikipedia !== 'none')
+    (selectedWikipedia !== null && selectedWikipedia !== 'none') ||
+    (ollamaMode === 'external' && externalOllamaUrl.length > 0)
 
   const { data: mapCollections, isLoading: isLoadingMaps } = useQuery({
     queryKey: [CURATED_MAP_COLLECTIONS_KEY],
@@ -331,12 +336,17 @@ export default function EasySetupWizard(props: { system: { services: ServiceSlim
     setIsProcessing(true)
 
     try {
+      // Save external Ollama URL if in external mode
+      if (ollamaMode === 'external' && externalOllamaUrl) {
+        await api.updateSetting('ollama.externalUrl', externalOllamaUrl)
+      }
+
       // All of these ops don't actually wait for completion, they just kick off the process, so we can run them in parallel without awaiting each one sequentially
       const installPromises = selectedServices.map((serviceName) => api.installService(serviceName))
 
       await Promise.all(installPromises)
 
-      // Download collections, category tiers, and AI models
+      // Download collections, category tiers, and AI models (skip model downloads for external Ollama)
       const categoryTierPromises: Promise<any>[] = []
       selectedTiers.forEach((tier, categorySlug) => {
         categoryTierPromises.push(api.downloadCategoryTier(categorySlug, tier.slug))
@@ -345,7 +355,7 @@ export default function EasySetupWizard(props: { system: { services: ServiceSlim
       const downloadPromises = [
         ...selectedMapCollections.map((slug) => api.downloadMapCollection(slug)),
         ...categoryTierPromises,
-        ...selectedAiModels.map((modelName) => api.downloadModel(modelName)),
+        ...(ollamaMode === 'local' ? selectedAiModels.map((modelName) => api.downloadModel(modelName)) : []),
       ]
 
       await Promise.all(downloadPromises)
@@ -510,6 +520,12 @@ export default function EasySetupWizard(props: { system: { services: ServiceSlim
     if (isSelected) {
       // Deselect all services in this capability
       setSelectedServices((prev) => prev.filter((s) => !capability.services.includes(s)))
+      // Reset Ollama mode when AI capability is deselected
+      if (capability.id === 'ai') {
+        setOllamaMode('local')
+        setExternalOllamaUrl('')
+        setExternalUrlError('')
+      }
     } else {
       // Select all available services in this capability
       const servicesToAdd = capability.services.filter((service) =>
@@ -665,6 +681,107 @@ export default function EasySetupWizard(props: { system: { services: ServiceSlim
                     renderCapabilityCard(capability, true)
                   )}
                 </div>
+
+                {/* Ollama configuration panel - shown when AI is selected and not already installed */}
+                {(() => {
+                  const aiCapability = CORE_CAPABILITIES.find((c) => c.id === 'ai')
+                  const aiInstalled = aiCapability ? isCapabilityInstalled(aiCapability) : false
+                  const aiSelected = aiCapability ? isCapabilitySelected(aiCapability) : false
+                  if (!aiCapability || aiInstalled || !aiSelected) return null
+
+                  return (
+                    <div className="mt-4 p-5 rounded-lg border border-desert-stone-light bg-surface-secondary">
+                      <h4 className="text-sm font-semibold text-text-primary mb-3">AI Assistant Setup</h4>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <div
+                          onClick={() => {
+                            setOllamaMode('local')
+                            setExternalOllamaUrl('')
+                            setExternalUrlError('')
+                            // Re-add Ollama service to selectedServices
+                            const ollamaService = SERVICE_NAMES.OLLAMA
+                            setSelectedServices((prev) =>
+                              prev.includes(ollamaService) ? prev : [...prev, ollamaService]
+                            )
+                          }}
+                          className={classNames(
+                            'p-4 rounded-lg border-2 cursor-pointer transition-all',
+                            ollamaMode === 'local'
+                              ? 'border-desert-green bg-desert-green/10'
+                              : 'border-border-subtle bg-surface-primary hover:border-desert-green'
+                          )}
+                        >
+                          <div className="flex items-center gap-2 mb-1">
+                            <div className={classNames(
+                              'w-4 h-4 rounded-full border-2 flex items-center justify-center flex-shrink-0',
+                              ollamaMode === 'local' ? 'border-desert-green bg-desert-green' : 'border-border-subtle'
+                            )}>
+                              {ollamaMode === 'local' && <div className="w-2 h-2 rounded-full bg-white" />}
+                            </div>
+                            <span className="font-semibold text-sm text-text-primary">Local</span>
+                          </div>
+                          <p className="text-xs text-text-muted ml-6">Install Ollama on this device</p>
+                        </div>
+
+                        <div
+                          onClick={() => {
+                            setOllamaMode('external')
+                            // Remove Ollama service from selectedServices (won't install locally)
+                            setSelectedServices((prev) => prev.filter((s) => s !== SERVICE_NAMES.OLLAMA))
+                          }}
+                          className={classNames(
+                            'p-4 rounded-lg border-2 cursor-pointer transition-all',
+                            ollamaMode === 'external'
+                              ? 'border-desert-green bg-desert-green/10'
+                              : 'border-border-subtle bg-surface-primary hover:border-desert-green'
+                          )}
+                        >
+                          <div className="flex items-center gap-2 mb-1">
+                            <div className={classNames(
+                              'w-4 h-4 rounded-full border-2 flex items-center justify-center flex-shrink-0',
+                              ollamaMode === 'external' ? 'border-desert-green bg-desert-green' : 'border-border-subtle'
+                            )}>
+                              {ollamaMode === 'external' && <div className="w-2 h-2 rounded-full bg-white" />}
+                            </div>
+                            <span className="font-semibold text-sm text-text-primary">External</span>
+                          </div>
+                          <p className="text-xs text-text-muted ml-6">Connect to an existing Ollama</p>
+                        </div>
+                      </div>
+
+                      {ollamaMode === 'external' && (
+                        <div className="mt-3">
+                          <Input
+                            name="externalOllamaUrl"
+                            label="Ollama URL"
+                            placeholder="http://192.168.1.100:11434"
+                            value={externalOllamaUrl}
+                            onChange={(e) => {
+                              setExternalOllamaUrl(e.target.value)
+                              if (externalUrlError) setExternalUrlError('')
+                            }}
+                            onBlur={() => {
+                              if (!externalOllamaUrl) {
+                                setExternalUrlError('')
+                                return
+                              }
+                              try {
+                                new URL(externalOllamaUrl)
+                                setExternalUrlError('')
+                              } catch {
+                                setExternalUrlError('Please enter a valid URL (e.g. http://192.168.1.100:11434)')
+                              }
+                            }}
+                            error={!!externalUrlError}
+                          />
+                          {externalUrlError && (
+                            <p className="mt-1 text-sm text-red-600">{externalUrlError}</p>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )
+                })()}
               </div>
             )}
 
@@ -745,6 +862,13 @@ export default function EasySetupWizard(props: { system: { services: ServiceSlim
 
   const renderStep3 = () => {
     // Check if AI or Information capabilities are selected OR already installed
+    const isAiCapabilityEnabled = (() => {
+      const aiCap = CORE_CAPABILITIES.find((c) => c.id === 'ai')
+      if (!aiCap) return false
+      const isInstalled = isCapabilityInstalled(aiCap)
+      const isSelected = isCapabilitySelected(aiCap)
+      return isInstalled || isSelected || ollamaMode === 'external'
+    })()
     const isAiSelected = selectedServices.includes(SERVICE_NAMES.OLLAMA) ||
       installedServices.some((s) => s.service_name === SERVICE_NAMES.OLLAMA)
     const isInformationSelected = selectedServices.includes(SERVICE_NAMES.KIWIX) ||
@@ -755,9 +879,9 @@ export default function EasySetupWizard(props: { system: { services: ServiceSlim
         <div className="text-center mb-6">
           <h2 className="text-3xl font-bold text-text-primary mb-2">Choose Content</h2>
           <p className="text-text-secondary">
-            {isAiSelected && isInformationSelected
+            {isAiCapabilityEnabled && isInformationSelected
               ? 'Select AI models and content categories for offline use.'
-              : isAiSelected
+              : isAiCapabilityEnabled
                 ? 'Select AI models to download for offline use.'
                 : isInformationSelected
                   ? 'Select content categories for offline knowledge.'
@@ -765,8 +889,8 @@ export default function EasySetupWizard(props: { system: { services: ServiceSlim
           </p>
         </div>
 
-        {/* AI Model Selection - Only show if AI capability is selected */}
-        {isAiSelected && (
+        {/* AI Model Selection - Only show if AI capability is enabled */}
+        {isAiCapabilityEnabled && (
           <div className="mb-8">
             <div className="flex items-center gap-3 mb-4">
               <div className="w-10 h-10 rounded-full bg-surface-primary border border-border-subtle flex items-center justify-center shadow-sm">
@@ -778,7 +902,20 @@ export default function EasySetupWizard(props: { system: { services: ServiceSlim
               </div>
             </div>
 
-            {isLoadingRecommendedModels ? (
+            {ollamaMode === 'external' ? (
+              <div className="p-4 rounded-lg border border-desert-green bg-desert-green/10">
+                <div className="flex items-center gap-2">
+                  <IconCheck size={18} className="text-desert-green flex-shrink-0" />
+                  <div>
+                    <p className="text-sm font-semibold text-text-primary">External Ollama configured</p>
+                    <p className="text-sm text-text-muted">
+                      Connecting to: <span className="font-mono">{externalOllamaUrl || '(URL not set)'}</span>
+                    </p>
+                    <p className="text-xs text-text-muted mt-1">Model downloads will be skipped — your external instance manages its own models.</p>
+                  </div>
+                </div>
+              </div>
+            ) : isLoadingRecommendedModels ? (
               <div className="flex justify-center py-12">
                 <LoadingSpinner />
               </div>
@@ -855,7 +992,7 @@ export default function EasySetupWizard(props: { system: { services: ServiceSlim
         {isInformationSelected && (
           <>
             {/* Divider between AI Models and Wikipedia */}
-            {isAiSelected && <hr className="my-8 border-border-subtle" />}
+            {isAiCapabilityEnabled && <hr className="my-8 border-border-subtle" />}
 
             <div className="mb-8">
               {isLoadingWikipedia ? (
@@ -927,7 +1064,7 @@ export default function EasySetupWizard(props: { system: { services: ServiceSlim
         )}
 
         {/* Show message if no capabilities requiring content are selected */}
-        {!isAiSelected && !isInformationSelected && (
+        {!isAiCapabilityEnabled && !isInformationSelected && (
           <div className="text-center py-12">
             <p className="text-text-secondary text-lg">
               No content-based capabilities selected. You can skip this step or go back to select
@@ -945,7 +1082,8 @@ export default function EasySetupWizard(props: { system: { services: ServiceSlim
       selectedMapCollections.length > 0 ||
       selectedTiers.size > 0 ||
       selectedAiModels.length > 0 ||
-      (selectedWikipedia !== null && selectedWikipedia !== 'none')
+      (selectedWikipedia !== null && selectedWikipedia !== 'none') ||
+      (ollamaMode === 'external' && externalOllamaUrl.length > 0)
 
     return (
       <div className="space-y-6">
@@ -963,7 +1101,7 @@ export default function EasySetupWizard(props: { system: { services: ServiceSlim
           />
         ) : (
           <div className="space-y-6">
-            {selectedServices.length > 0 && (
+            {(selectedServices.length > 0 || (ollamaMode === 'external' && externalOllamaUrl)) && (
               <div className="bg-surface-primary rounded-lg border-2 border-desert-stone-light p-6">
                 <h3 className="text-xl font-semibold text-text-primary mb-4">
                   Capabilities to Install
@@ -982,6 +1120,15 @@ export default function EasySetupWizard(props: { system: { services: ServiceSlim
                         </span>
                       </li>
                     ))}
+                  {ollamaMode === 'external' && externalOllamaUrl && (
+                    <li className="flex items-center">
+                      <IconCheck size={20} className="text-desert-green mr-2" />
+                      <span className="text-text-primary">
+                        AI Assistant
+                        <span className="text-text-muted text-sm ml-2">(External: {externalOllamaUrl})</span>
+                      </span>
+                    </li>
+                  )}
                 </ul>
               </div>
             )}

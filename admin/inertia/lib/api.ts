@@ -421,6 +421,24 @@ class API {
     })()
   }
 
+  async deleteZimFile(filename: string) {
+    return catchInternal(async () => {
+      const response = await this.client.delete<{ success: boolean; message: string }>(
+        `/zim/${encodeURIComponent(filename)}`
+      )
+      return response.data
+    })()
+  }
+
+  async deleteMapFile(filename: string) {
+    return catchInternal(async () => {
+      const response = await this.client.delete<{ success: boolean; message: string }>(
+        `/maps/${encodeURIComponent(filename)}`
+      )
+      return response.data
+    })()
+  }
+
   async getSystemInfo() {
     return catchInternal(async () => {
       const response = await this.client.get<SystemInformationResponse>('/system/info')

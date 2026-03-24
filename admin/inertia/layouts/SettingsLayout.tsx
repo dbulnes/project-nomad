@@ -1,6 +1,7 @@
 import {
   IconArrowBigUpLines,
   IconChartBar,
+  IconDatabase,
   IconDashboard,
   IconFolder,
   IconGavel,
@@ -27,6 +28,7 @@ export default function SettingsLayout({ children }: { children: React.ReactNode
     { name: 'Benchmark', href: '/settings/benchmark', icon: IconChartBar, current: false },
     { name: 'Content Explorer', href: '/settings/zim/remote-explorer', icon: IconZoom, current: false },
     { name: 'Content Manager', href: '/settings/zim', icon: IconFolder, current: false },
+    { name: 'Storage', href: '/settings/storage', icon: IconDatabase, current: false },
     { name: 'Maps Manager', href: '/settings/maps', icon: IconMapRoute, current: false },
     {
       name: 'Service Logs & Metrics',

@@ -104,6 +104,10 @@ export default class SettingsController {
         });
     }
 
+    async storage({ inertia }: HttpContext) {
+        return inertia.render('settings/storage')
+    }
+
     async getSetting({ request, response }: HttpContext) {
         const key = request.qs().key;
         const value = await KVStore.getValue(key as KVStoreKey);
