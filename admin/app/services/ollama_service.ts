@@ -25,6 +25,11 @@ export class OllamaService {
 
   constructor() { }
 
+  public resetClient() {
+    this.ollama = null
+    this.ollamaInitPromise = null
+  }
+
   private async _initializeOllamaClient() {
     if (!this.ollamaInitPromise) {
       this.ollamaInitPromise = (async () => {

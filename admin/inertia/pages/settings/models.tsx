@@ -25,7 +25,7 @@ export default function ModelsPage(props: {
   models: {
     availableModels: NomadOllamaModel[]
     installedModels: ModelResponse[]
-    settings: { chatSuggestionsEnabled: boolean; aiAssistantCustomName: string }
+    settings: { chatSuggestionsEnabled: boolean; aiAssistantCustomName: string; externalOllamaUrl: string }
   }
 }) {
   const { aiAssistantName } = usePage<{ aiAssistantName: string }>().props
@@ -96,6 +96,9 @@ export default function ModelsPage(props: {
   )
   const [aiAssistantCustomName, setAiAssistantCustomName] = useState(
     props.models.settings.aiAssistantCustomName
+  )
+  const [externalOllamaUrl, setExternalOllamaUrl] = useState(
+    props.models.settings.externalOllamaUrl
   )
 
   const [query, setQuery] = useState('')
@@ -229,7 +232,7 @@ export default function ModelsPage(props: {
             starting with smaller models first to see how they perform on your system before moving
             on to larger ones.
           </p>
-          {!isInstalled && (
+          {!isInstalled && !externalOllamaUrl && (
             <Alert
               title={`${aiAssistantName}'s dependencies are not installed. Please install them to manage AI models.`}
               type="warning"
@@ -257,6 +260,26 @@ export default function ModelsPage(props: {
               }}
             />
           )}
+
+          <StyledSectionHeader title="Connection" className="mt-8 mb-4" />
+          <div className="bg-surface-primary rounded-lg border-2 border-border-subtle p-6">
+            <div className="space-y-4">
+              <Input
+                name="externalOllamaUrl"
+                label="External Ollama URL"
+                helpText="Connect to an existing Ollama instance instead of using the built-in one. Leave blank to use the built-in AI Assistant. Example: http://192.168.1.100:11434"
+                placeholder="http://host.docker.internal:11434"
+                value={externalOllamaUrl}
+                onChange={(e) => setExternalOllamaUrl(e.target.value)}
+                onBlur={() =>
+                  updateSettingMutation.mutate({
+                    key: 'ollama.externalUrl',
+                    value: externalOllamaUrl,
+                  })
+                }
+              />
+            </div>
+          </div>
 
           <StyledSectionHeader title="Settings" className="mt-8 mb-4" />
           <div className="bg-surface-primary rounded-lg border-2 border-border-subtle p-6">

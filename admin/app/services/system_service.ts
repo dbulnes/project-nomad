@@ -24,6 +24,11 @@ export class SystemService {
   constructor(private dockerService: DockerService) { }
 
   async checkServiceInstalled(serviceName: string): Promise<boolean> {
+    // External Ollama counts as "installed"
+    if (serviceName === SERVICE_NAMES.OLLAMA) {
+      const externalUrl = await KVStore.getValue('ollama.externalUrl')
+      if (externalUrl && externalUrl.trim() !== '') return true
+    }
     const services = await this.getServices({ installedOnly: true });
     return services.some(service => service.service_name === serviceName);
   }

@@ -140,6 +140,14 @@ export class DockerService {
       return null
     }
 
+    // Check for external Ollama URL override
+    if (serviceName === SERVICE_NAMES.OLLAMA || serviceName === 'nomad_ollama') {
+      const externalUrl = await KVStore.getValue('ollama.externalUrl')
+      if (externalUrl && externalUrl.trim() !== '') {
+        return externalUrl.trim()
+      }
+    }
+
     const service = await Service.query()
       .where('service_name', serviceName)
       .andWhere('installed', true)
